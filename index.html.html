@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>แผนที่สถานี 3BB ชัยภูมิ</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+/* Layout: desktop = side panel + map; phone = full-screen map, search floating on top, selected list in a bottom sheet. */
+:root{
+  --bg:#f3f5f9; --surface:#ffffff; --ink:#16202e; --muted:#5b687a; --line:#dce2ec;
+  --accent:#1d5fd8; --accent-soft:#e7effd; --danger:#c4283a;
+  --radius:12px; --hdr:56px;
+  --font:'Noto Sans Thai',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
+  --sheet-peek:92px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:var(--font);font-size:15px;line-height:1.45;background:var(--bg);color:var(--ink);-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit}
+.app{height:100%;display:flex;flex-direction:column}
+header.top{flex:none;height:calc(var(--hdr) + env(safe-area-inset-top,0px));padding:env(safe-area-inset-top,0px) max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:12px;background:var(--surface);border-bottom:1px solid var(--line);position:relative;z-index:20}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--accent);display:grid;place-items:center;flex:none}
+.logo svg{width:20px;height:20px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.top h1{margin:0;font-size:17px;font-weight:700;line-height:1.2}
+.top p{margin:0;font-size:12px;color:var(--muted)}
+.main{flex:1;min-height:0;display:flex;position:relative}
+
+.panel{width:390px;flex:none;display:flex;flex-direction:column;min-height:0;background:var(--surface);border-right:1px solid var(--line);position:relative;z-index:10}
+.grab{display:none}
+.searchwrap{position:relative;padding:12px;border-bottom:1px solid var(--line);flex:none}
+.search{display:flex;align-items:center;gap:8px;height:48px;padding:0 6px 0 12px;border:1.5px solid var(--line);border-radius:var(--radius);background:var(--bg)}
+.search:focus-within{border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-soft)}
+.search svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+.search input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;font:inherit;font-size:16px;color:var(--ink)}
+.search .x{width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
+.search .x[hidden]{display:none}
+.results{position:absolute;left:12px;right:12px;top:calc(100% - 6px);z-index:50;max-height:min(58vh,440px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 12px 32px rgba(22,32,46,.18)}
+.results[hidden]{display:none}
+.res-head{padding:8px 12px;font-size:12px;color:var(--muted);background:var(--bg);border-bottom:1px solid var(--line);position:sticky;top:0}
+.result{display:grid;grid-template-columns:12px 1fr auto;gap:10px;align-items:start;width:100%;padding:10px 12px;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;cursor:pointer}
+.result:last-child{border-bottom:0}
+.result:hover,.result.act{background:var(--accent-soft)}
+.dot{width:12px;height:12px;border-radius:50%;margin-top:5px;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.code{font-family:var(--mono);font-weight:700;font-size:12.5px;word-break:break-all}
+.nm{font-size:13.5px}
+.sub{font-size:12px;color:var(--muted)}
+.pick{align-self:center;font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--accent);color:#fff;white-space:nowrap}
+.result.on .pick{background:var(--accent-soft);color:var(--accent)}
+.noresult{padding:18px 12px;color:var(--muted);font-size:14px}
+
+.toolbar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px}
+.count{font-size:14px;margin-right:auto}
+.count b{font-size:16px;font-variant-numeric:tabular-nums}
+.tb{height:36px;padding:0 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.tb:hover{border-color:var(--accent);color:var(--accent)}
+.tb.danger{color:var(--danger)}
+.tb.danger:hover{border-color:var(--danger);color:var(--danger)}
+.tb.armed{background:var(--danger);border-color:var(--danger);color:#fff}
+.legend{flex:none;display:flex;flex-wrap:wrap;gap:6px 12px;padding:0 12px 10px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend .dot{margin:0;width:11px;height:11px}
+.legend b{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.list{flex:1;min-height:0;overflow:auto;padding:0 12px 16px;border-top:1px solid var(--line)}
+.grp{margin:0;padding:12px 2px 6px;font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.02em;display:flex;justify-content:space-between}
+.item{display:grid;grid-template-columns:12px 1fr auto auto;gap:6px 10px;align-items:center;padding:9px 6px 9px 12px;margin-bottom:6px;border:1px solid var(--line);border-radius:10px;cursor:pointer}
+.item:hover{border-color:var(--accent);background:var(--accent-soft)}
+.item .meta{min-width:0}
+.nav{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:600;text-decoration:none}
+.rm{width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
+.rm:hover{background:#fdecee;color:var(--danger)}
+.empty{padding:28px 8px;text-align:center;color:var(--muted);font-size:14px}
+
+.mapwrap{flex:1;min-width:0;position:relative;isolation:isolate;z-index:0}
+#map{position:absolute;inset:0;background:#e8ecf2;font-family:var(--font)}
+.hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:500;pointer-events:none;width:min(300px,80%);padding:16px 18px;border-radius:14px;background:rgba(255,255,255,.94);box-shadow:0 8px 28px rgba(22,32,46,.18);text-align:center}
+.hint b{display:block;font-size:15px;margin-bottom:4px}
+.hint span{font-size:13px;color:var(--muted)}
+.toast{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:600;padding:10px 16px;border-radius:99px;background:var(--ink);color:#fff;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+.leaflet-popup-content{margin:12px 14px;font-family:var(--font);font-size:13.5px;line-height:1.45}
+.pp-code{font-family:var(--mono);font-weight:700;font-size:12.5px;word-break:break-all}
+.pp-name{font-weight:600;margin:2px 0 6px}
+.pp dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12.5px}
+.pp dt{color:var(--muted)}
+.pp dd{margin:0}
+.pp-same{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.pp-same div{font-family:var(--mono);font-size:11.5px;color:var(--ink);word-break:break-all}
+.pp-nav{display:block;margin-top:10px;padding:9px;border-radius:8px;background:var(--accent);color:#fff!important;text-align:center;text-decoration:none;font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+@media (max-width:800px){
+  :root{--top:calc(var(--hdr) + env(safe-area-inset-top,0px))}
+  .main{display:block}
+  .mapwrap{position:absolute;left:0;right:0;top:0;bottom:calc(var(--sheet-peek) + env(safe-area-inset-bottom,0px))}
+  .leaflet-control-zoom{display:none}
+  .panel{position:absolute;left:0;right:0;bottom:0;width:auto;height:min(62%,520px);border-right:0;border-radius:18px 18px 0 0;box-shadow:0 -6px 24px rgba(22,32,46,.16);padding-bottom:env(safe-area-inset-bottom,0px);transition:height .22s ease}
+  .panel.collapsed{height:calc(var(--sheet-peek) + env(safe-area-inset-bottom,0px))}
+  .panel.collapsed .legend,.panel.collapsed .list{display:none}
+  .grab{display:block;flex:none;width:100%;height:26px;border:0;background:transparent;cursor:pointer;position:relative}
+  .grab::after{content:"";position:absolute;left:50%;top:10px;width:40px;height:5px;margin-left:-20px;border-radius:3px;background:var(--line)}
+  .searchwrap{position:fixed;left:0;right:0;top:var(--top);z-index:30;border:0;background:transparent;padding:10px max(12px,env(safe-area-inset-right,0px)) 0 max(12px,env(safe-area-inset-left,0px))}
+  .search{background:#fff;box-shadow:0 4px 16px rgba(22,32,46,.2);border-color:transparent}
+  .results{left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));top:calc(100% + 4px);max-height:52vh}
+  .toolbar{padding-top:0;flex-wrap:nowrap;gap:6px}
+  .tb{padding:0 9px}
+  .top p{display:none}
+}
+#locate{position:absolute;right:10px;bottom:92px;z-index:450;width:44px;height:44px;display:grid;place-items:center;border:2px solid rgba(0,0,0,.2);border-radius:8px;background:#fff;color:#2c3a4d;cursor:pointer;box-shadow:none}
+#locate svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+#locate[data-state=on]{background:#2563eb;border-color:#2563eb;color:#fff}
+#locate[data-state=wait]{color:#2563eb;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+.nearline{flex:none;padding:0 12px 8px;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nearline b{color:var(--ink);font-weight:600}
+.nearline[hidden]{display:none}
+.dist{font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;background:#e9f9ef;color:#0b7a3b;white-space:nowrap}
+.addb{height:34px;padding:0 12px;border:0;border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+.lnk{border:0;background:none;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;padding:0}
+#sharebox{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:16px;background:rgba(22,32,46,.45)}
+#sharebox[hidden]{display:none}
+.sbcard{width:min(480px,100%);padding:18px;border-radius:16px;background:var(--surface);box-shadow:0 16px 48px rgba(22,32,46,.35);display:flex;flex-direction:column;gap:12px}
+.sbcard h2{margin:0;font-size:17px}
+.sbcard p{margin:0;font-size:13px;color:var(--muted)}
+.sbcard textarea{width:100%;min-height:88px;padding:10px;border:1.5px solid var(--line);border-radius:10px;font:12px/1.4 var(--mono);color:var(--ink);background:var(--bg);resize:none;word-break:break-all}
+.sbrow{display:flex;gap:8px;justify-content:flex-end}
+.tb.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (prefers-reduced-motion:reduce){.panel,.toast{transition:none}#locate[data-state=wait]{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.800 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></div>
+    <div><h1>แผนที่สถานี 3BB ชัยภูมิ</h1><p>ค้นหาด้วยชื่อหรือ code แล้วเลือกหมุดที่ต้องการดู</p></div>
+  </header>
+  <div class="main">
+    <aside class="panel collapsed" id="panel">
+      <button class="grab" id="grab" aria-label="เปิดหรือปิดรายการที่เลือก"></button>
+      <div class="searchwrap" id="searchwrap">
+        <div class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.500-3.500"/></svg>
+          <input id="q" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="พิมพ์ชื่อหรือ code เช่น บำเหน็จ, 1601" aria-label="ค้นหาชื่อหรือ code">
+          <button class="x" id="qx" hidden aria-label="ล้างคำค้น">&times;</button>
+        </div>
+        <div class="results" id="results" hidden></div>
+      </div>
+      <div class="toolbar">
+        <div class="count">เลือกแล้ว <b id="cnt">0</b> / <span id="tot"></span></div>
+        <button class="tb" id="fit">ซูมรวม</button>
+        <button class="tb" id="all" title="เลือกทุกหมุด">ทั้งหมด</button>
+        <button class="tb danger" id="clear" title="ล้างหมุดทั้งหมด">ล้าง</button>
+        <button class="tb" id="share" title="คัดลอกลิงก์พร้อมรายการที่เลือก">ลิงก์</button>
+      </div>
+      <div class="nearline" id="nearline" hidden></div>
+      <div class="legend" id="legend"></div>
+      <div class="list" id="list"></div>
+    </aside>
+    <div class="mapwrap">
+      <div id="map"></div>
+      <div class="hint" id="hint"><b>ยังไม่ได้เลือกหมุด</b><span>พิมพ์ชื่อหรือ code ที่ช่องค้นหา แล้วกดเลือกรายการ หมุดจะขึ้นบนแผนที่</span></div>
+      <button id="locate" data-state="off" aria-label="แสดงตำแหน่งของฉัน" title="แสดงตำแหน่งของฉัน"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+</div>
+<div id="sharebox" hidden><div class="sbcard" role="dialog" aria-label="ลิงก์แชร์">
+  <h2>ลิงก์แชร์หมุดที่เลือก</h2>
+  <p id="sbinfo"></p>
+  <textarea id="shareurl" readonly></textarea>
+  <p id="sbmsg">กดปุ่มคัดลอก หรือกดค้างที่ช่องลิงก์แล้วเลือกคัดลอก</p>
+  <div class="sbrow"><button class="tb" id="sbclose">ปิด</button><button class="tb primary" id="sbcopy">คัดลอกลิงก์</button></div>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const DATA=[["NE_WCO_1605_093_1H_A","WDM 3BB WDM บำเหน็จณรงค์ NE_WCO_1605_093_1H_A","TRS Base/Junction","WDM","WDM บำเหน็จณรงค์","บ้านเพชร","บำเหน็จณรงค์","WDM บำเหน็จณรงค์",15.440891,101.68983],["NE_WCO_1601_031_1H_R","WDM 3BB ชุมสายห้าแยกโนนไฮ NE_WCO_1601_031_1H_R","TRS Base/Junction","WDM","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["NE_WAC_1605_093_1H_A","WDM 3BB WDM บำเหน็จณรงค์ NE_WAC_1605_093_1H_A","TRS Base/Junction","WDM","WDM บำเหน็จณรงค์","บ้านเพชร","บำเหน็จณรงค์","WDM บำเหน็จณรงค์",15.440891,101.68983],["NE_WAC_1601_031_1H_R","WDM 3BB ชุมสายห้าแยกโนนไฮ NE_WAC_1601_031_1H_R","TRS Base/Junction","WDM","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["MME_1601_097","MME 3BB ชุมสายแขวงการทางหลวงชัยภูมิ MME-1601-97","TRS Base/Junction","Main Metronet","ชุมสายแขวงการทางหลวงชัยภูมิ","ในเมือง","เมืองชัยภูมิ","ชุมสายแขวงการทางหลวงชัยภูมิ",15.820513,102.046033],["MME_1601_031","MME 3BB ชุมสายห้าแยกโนนไฮ MME-1601-31","TRS Base/Junction","Main Metronet","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["ME_1616_091","ME 3BB ซับใหญ่ชัยภูมิ ME-1616-91","TRS Base/Junction","Metronet","สามแยก","ซับใหญ่","ซับใหญ่","ซับใหญ่ชัยภูมิ",15.634984,101.620259],["ME_1615_091","ME 3BB ภักดีชุมพล ME-1615-91","TRS Base/Junction","Metronet","ภักดีชุมพล","เจาทอง","ภักดีชุมพล","ภักดีชุมพล",15.847492,101.409277],["ME_1613_093","ME 3BB บ้านท่าโป่งชัยภูมิ ME-1613-93","TRS Base/Junction","Metronet","หมู่บ้านบ้านโป่งนคร","วังตะเฆ่","หนองบัวระเหว","บ้านท่าโป่งชัยภูมิ",15.829327,101.510035],["ME_1613_091","ME 3BB หนองบัวระเหว ME-1613-91","TRS Base/Junction","Metronet","หมู่บ้านบ้านหนองบัวระเหว","หนองบัวระเหว","หนองบัวระเหว","หนองบัวระเหว",15.750759,101.762363],["ME_1612_095","ME 3BB นายางกลัก ME-1612-95","TRS Base/Junction","Metronet","หมู่บ้านบ้านนายางกลัก","นายางกลัก","เทพสถิต","นายางกลัก",15.6593,101.508095],["ME_1612_091","ME 3BB เทพสถิต ME-1612-91","TRS Base/Junction","Metronet","หมู่บ้านบ้านวะตะแบก","วะตะแบก","เทพสถิต","เทพสถิต",15.3864,101.442151],["ME_1611_091","ME 3BB เกษตรสมบูรณ์ ME-1611-91","TRS Base/Junction","Metronet","หมู่บ้านบ้านกำแพง","บ้านยาง","เกษตรสมบูรณ์","เกษตรสมบูรณ์",16.282622,101.940908],["ME_1610_095","ME 3BB โรงเรียนบ้านหนองปล้อง ME-1610-95","TRS Base/Junction","Metronet","บ้านหนองปล้อง","หนองแวง","หนองบัวแดง","โรงเรียนบ้านหนองปล้อง",16.117619,101.732748],["ME_1610_093","ME 3BB สามแยกเดโช ME-1610-93","TRS Base/Junction","Metronet","สามแยกเดโช","หนองบัวแดง","หนองบัวแดง","สามแยกเดโช",16.071482,101.789261],["ME_1610_092","ME 3BB โนนสอาด ME-1610-92","TRS Base/Junction","Metronet","โนนสอาด","ท่าใหญ่","หนองบัวแดง","โนนสอาด",16.013186,101.615984],["ME_1610_091","ME 3BB เทศบาลตำบลหนองบัวแดง ME-1610-91","TRS Base/Junction","Metronet","เทศบาลตำบลหนองบัวแดง","หนองบัวแดง","หนองบัวแดง","เทศบาลตำบลหนองบัวแดง",16.078744,101.800171],["ME_1609_091","ME 3BB คอนสาร ME-1609-91","TRS Base/Junction","Metronet","หมู่บ้านบ้านน้ำพุปางวัว","คอนสาร","คอนสาร","คอนสาร",16.5944,101.928175],["ME_1608_091","ME 3BB บ้านแท่น ME-1608-91","TRS Base/Junction","Metronet","หมู่บ้านบ้านแท่น","บ้านแท่น","บ้านแท่น","บ้านแท่น",16.407952,102.348202],["ME_1607_092","ME 3BB ตลาดแลงบ้านเขว้า ME-1607-92","TRS Base/Junction","Metronet","ตลาดแลงบ้านเขว้า","บ้านเขว้า","บ้านเขว้า","ตลาดแลงบ้านเขว้า",15.764578,101.910663],["ME_1607_091","ME 3BB เทศบาลบ้านเขว้า ME-1607-91","TRS Base/Junction","Metronet","เทศบาลบ้านเขว้า","บ้านเขว้า","บ้านเขว้า","เทศบาลบ้านเขว้า",15.778536,101.909512],["ME_1606_094","ME 3BB ดงเย็น ME-1606_094","TRS Base/Junction","Metronet","หมู่บ้านดงเย็น","ห้วยไร่","คอนสวรรค์","ดงเย็น",15.977035,102.194887],["ME_1606_093","ME 3BB บ้านช่องสามหมอ ME-1606-93","TRS Base/Junction","Metronet","หมู่บ้านบ้านชนแดน","ช่องสามหมอ","คอนสวรรค์","บ้านช่องสามหมอ",16.067009,102.278686],["ME_1606_091","ME 3BB หนองโนชัยภูมิ ME-1606-91","TRS Base/Junction","Metronet","หนองโนชัยภูมิ","โคกมั่งงอย","คอนสวรรค์","หนองโนชัยภูมิ",15.958747,102.279674],["ME_1605_096","ME 3BB บ้านโคกหินตั้ง ME-1605-96","TRS Base/Junction","Metronet","บ้านโคกหินตั้ง","บ้านเพชร","บำเหน็จณรงค์","บ้านโคกหินตั้ง",15.402737,101.618681],["ME_1605_095","ME 3BB หัวทะเลชัยภูมิ ME-1605-95","TRS Base/Junction","Metronet","หัวทะเลชัยภูมิ","หัวทะเล","บำเหน็จณรงค์","หัวทะเลชัยภูมิ",15.465927,101.754928],["ME_1605_092","ME 3BB บ้านชวน ME-1605-92","TRS Base/Junction","Metronet","บ้านชวน","บ้านชวน","บำเหน็จณรงค์","บ้านชวน",15.502065,101.686961],["ME_1605_091","ME 3BB บ้านคำปิง ME-1605-91","TRS Base/Junction","Metronet","บ้านคำปิง","บ้านเพชร","บำเหน็จณรงค์","บ้านคำปิง",15.440611,101.689063],["ME_1604_095","ME 3BB บ้านวังเสมา ME-1604-95","TRS Base/Junction","Metronet","บ้านวังเสมา","กุดน้ำใส","จัตุรัส","บ้านวังเสมา",15.565222,101.828186],["ME_1604_094","ME 3BB บ้านหนองบัวบาน ME-1604-94","TRS Base/Junction","Metronet","หมู่บ้านบ้านหนองบัวบาน","หนองบัวบาน","จัตุรัส","บ้านหนองบัวบาน",15.683197,101.867566],["ME_1604_092","ME 3BB บ้านละหาน ME-1604-92","TRS Base/Junction","Metronet","บ้านละหาน","ละหาน","จัตุรัส","บ้านละหาน",15.592846,101.9006],["ME_1604_091","ME 3BB จัตุุรัสชัยภูมิ ME-1604-91","TRS Base/Junction","Metronet","จัตุุรัสชัยภูมิ","หนองบัวใหญ่","จัตุรัส","จัตุุรัสชัยภูมิ",15.571623,101.855705],["ME_1603_096","ME 3BB บ้านก่าน ME-1603-96","TRS Base/Junction","Metronet","บ้านก่าน","หนองสังข์","แก้งคร้อ","บ้านก่าน",16.279889,102.35844],["ME_1603_093","ME 3BB บ้านหนองแวงน้อย ME-1603-93","TRS Base/Junction","Metronet","บ้านหนองแวงน้อย","โคกกุง","แก้งคร้อ","บ้านหนองแวงน้อย",16.11045,102.161026],["ME_1603_091","ME 3BB คลองไผ่งาม ME-1603-91","TRS Base/Junction","Metronet","คลองไผ่งาม","หนองไผ่","แก้งคร้อ","คลองไผ่งาม",16.116392,102.258315],["ME_1603_031","ME 3BB แก้งคร้อชัยภูมิ ME-1603-31","TRS Base/Junction","Metronet","แก้งคร้อชัยภูมิ","ช่องสามหมอ","แก้งคร้อ","แก้งคร้อชัยภูมิ",16.109263,102.257167],["ME_1602_098","ME 3BB หนองงูเหลือมภูเขียว ME-1602-98","TRS Base/Junction","Metronet","หนองงูเหลือมภูเขียว","บ้านเพชร","ภูเขียว","หนองงูเหลือมภูเขียว",16.341144,102.236337],["ME_1602_096","ME 3BB โรงงานน้ำตาลภูเขียว ME-1602-96","TRS Base/Junction","Metronet","โรงงานน้ำตาลภูเขียว Node1","โคกสะอาด","ภูเขียว","โรงงานน้ำตาลภูเขียว",16.482745,102.124976],["ME_1602_094","ME 3BB บ้านโคกสะอาด-ร่องแสนคำ ME-1602-94","TRS Base/Junction","Metronet","หมู่บ้านบ้านโคกสะอาด","บ้านแก้ง","ภูเขียว","บ้านโคกสะอาด-ร่องแสนคำ",16.411371,101.993566],["ME_1602_093","ME 3BB บ้านหนองสองห้องชัยภูมิ ME-1602-93","TRS Base/Junction","Metronet","หมู่บ้านบ้านหนองสองห้อง","ผักปัง","ภูเขียว","หมู่ที่ 10 บ้านหนองสองห้อง",16.424541,102.129928],["ME_1602_092","ME 3BB บ้านหนองคัน ME-1602-92","TRS Base/Junction","Metronet","หมู่บ้านบ้านหนองบัวคำ","ธาตุทอง","ภูเขียว","บ้านหนองคัน",16.22321,102.193836],["ME_1602_091","ME 3BB โนนงามภูเขียว ME-1602-91","TRS Base/Junction","Metronet","โนนงามภูเขียว","ผักปัง","ภูเขียว","โนนงามภูเขียว",16.367234,102.129294],["ME_1601_397","ME 3BB ศิลวราพงษ์บ้านเล่า ME-1601-397","TRS Base/Junction","Metronet","ศิลวราพงษ์บ้านเล่า","บ้านเล่า","เมืองชัยภูมิ","ศิลวราพงษ์บ้านเล่า",15.853979,102.071681],["ME_1601_297","ME 3BB บ้านท่าหินโงม ME-1601-297","TRS Base/Junction","Metronet","บ้านท่าหินโงม","ท่าหินโงม","เมืองชัยภูมิ","บ้านท่าหินโงม",16.06352,102.038511],["ME_1601_098","ME 3BB ราชภัฏชัยภูมิ ME-1601-98","TRS Base/Junction","Metronet","ราชภัฎชัยภูมิ","นาฝาย","เมืองชัยภูมิ","ราชภัฎชัยภูมิ",15.932879,102.023513],["ME_1601_097","ME 3BB ชุมสายแขวงการทางหลวงชัยภูมิ ME-1601-97","TRS Base/Junction","Metronet","ชุมสายแขวงการทางหลวงชัยภูมิ","ในเมือง","เมืองชัยภูมิ","ชุมสายแขวงการทางหลวงชัยภูมิ",15.820513,102.046033],["ME_1601_096","ME 3BB สหกรณ์ตรวจบัญชีชัยภูมิ ME-1601-96","TRS Base/Junction","Metronet","สหกรณ์ตรวจบัญชีชัยภูมิ","ในเมือง","เมืองชัยภูมิ","สหกรณ์ตรวจบัญชีชัยภูมิ",15.816591,102.029093],["ME_1601_095","ME 3BB ลาดใหญ่ ME-1601-95","TRS Base/Junction","Metronet","หมู่บ้านบ้านลาดใหญ่","ลาดใหญ่","เมืองชัยภูมิ","ลาดใหญ่",15.787037,102.204509],["ME_1601_094","ME 3BB บ้านหนองนาแชง ME-1601-94","TRS Base/Junction","Metronet","หมู่บ้านทางแยกเข้าบ้านหนองนาแซง ถนนสีคิ้ว","หนองนาแซง","เมืองชัยภูมิ","บ้านหนองนาแซง",15.765361,102.024205],["ME_1601_093","ME 3BB สามแยกนิเวศน์รัตน์ ME-1601-93","TRS Base/Junction","Metronet","สามแยกนิเวศน์รัตน์","ในเมือง","เมืองชัยภูมิ","สามแยกนิเวศน์รัตน์",15.822319,102.048951],["ME_1601_092","ME 3BB บ้านค่ายชัยภูมิ ME-1601-92","TRS Base/Junction","Metronet","บ้านค่ายชัยภูมิ","บ้านค่าย","เมืองชัยภูมิ","บ้านค่ายชัยภูมิ",15.686712,102.009918],["ME_1601_031C","ME 3BB ชุมสายห้าแยกโนนไฮ ME-1601-31C","TRS Base/Junction","Metronet","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["ME_1601_031B","ME 3BB ชุมสายห้าแยกโนนไฮ ME-1601-31B","TRS Base/Junction","Metronet","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["DUMMY_CUS_CPM","3BB สำนักงาน 3BB ชัยภูมิ","TRS Customer","E1-Corporate","3BB สำนักงาน 3BB ชัยภูมิ","ในเมือง","เมืองชัยภูมิ","สำนักงาน 3BB ชัยภูมิ",15.801917,102.028541],["1619_041","OLT 3BB เนินสง่า HF1619-41","TRS Customer","FTTX","เนินสง่า","หนองฉิม","เนินสง่า","เนินสง่า",15.561218,101.956067],["1617_041","OLT 3BB ลาดใหญ่ HF1617-41","TRS Customer","FTTX","หมู่บ้านบ้านลาดใหญ่","ลาดใหญ่","เมืองชัยภูมิ","ลาดใหญ่",15.787037,102.204509],["1616_031","OLT 3BB บ้านตะโกทอง HF1616-31","TRS Customer","FTTX","หมู่บ้านบ้านตะโกทอง","ตะโกทอง","ซับใหญ่","บ้านตะโกทอง",15.555202,101.651663],["1616_001","OLT 3BB ซับใหญ่ HF1616-01","TRS Customer","FTTX","ซับใหญ่","ซับใหญ่","ซับใหญ่","ซับใหญ่",15.637279,101.619383],["1615_044","OLT 3BB บ้านปรางค์มะค่า HF1615-44","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 3 บ้านปรางค์มะค่า","วังทอง","ภักดีชุมพล","บ้านปรางค์มะค่า",15.813358,101.341546],["1615_008","OLT 3BB บ้านเจียง HF1615-08","TRS Customer","FTTX","หมู่บ้านบ้านโนนศิลาทอง","บ้านเจียง","ภักดีชุมพล","บ้านเจียง",16.023797,101.486384],["1615_002","OLT 3BB บ้้านเจาทอง HF1615-02","TRS Customer","FTTX","บ้้านเจาทอง","เจาทอง","ภักดีชุมพล","บ้้านเจาทอง",15.853603,101.409335],["1613_039","OLT 3BB บ้านแจ้งใหญ่ HF1613-39","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 6  บ้านแจ้งใหญ่","ห้วยแย้","หนองบัวระเหว","บ้านแจ้งใหญ่",15.828481,101.730857],["1613_008","OLT 3BB บ้านท่าโป่งชัยภูมิ HF1613-08","TRS Customer","FTTX","หมู่บ้านบ้านโป่งนคร","วังตะเฆ่","หนองบัวระเหว","บ้านท่าโป่งชัยภูมิ",15.829327,101.510035],["1613_007","OLT 3BB บ้านหัวสะพาน HF1613-07","TRS Customer","FTTX","หมู่บ้านบ้านหัวสะพาน","วังตะเฆ่","หนองบัวระเหว","บ้านหัวสะพาน",15.825197,101.617337],["1613_001","OLT 3BB หนองบัวระเหว HF1613-01","TRS Customer","FTTX","หมู่บ้านบ้านหนองบัวระเหว","หนองบัวระเหว","หนองบัวระเหว","หนองบัวระเหว",15.750759,101.762363],["1612_065","OLT 3BB บ้านประดู่ซับกาด HF1612-65","TRS Customer","FTTX","หมู่บ้านบ้านประดู่ซับกาด","นายางกลัก","เทพสถิต","บ้านประดู่ซับกาด",15.730848,101.475277],["1612_013","OLT 3BB บ้านวังใหม่พัฒนา HF1612-13","TRS Customer","FTTX","หมู่บ้านบ้านวังใหม่พัฒนา","บ้านไร่","เทพสถิต","บ้านวังใหม่พัฒนา",15.559221,101.441922],["1612_011","OLT 3BB บ้านทุ่งดอกกระเจียว HF1612-11","TRS Customer","FTTX","หมู่บ้านบ้านหนองใหญ่","บ้านไร่","เทพสถิต","บ้านทุ่งดอกกระเจียว",15.623391,101.400397],["1612_010","OLT 3BB บ้านยางเกี่ยวแฝก HF1612-10","TRS Customer","FTTX","หมู่บ้านบ้านยางเกี่ยวแฝก","วะตะแบก","เทพสถิต","บ้านยางเกี่ยวแฝก",15.467376,101.431763],["1612_007","OLT 3BB นายางกลัก HF1612-07","TRS Customer","FTTX","หมู่บ้านบ้านนายางกลัก","นายางกลัก","เทพสถิต","นายางกลัก",15.6593,101.508095],["1612_005","OLT 3BB ห้วยยายจิ๋ว HF1612-05","TRS Customer","FTTX","หมู่บ้านบ้านห้วยยายจิ๋ว","ห้วยยายจิ๋ว","เทพสถิต","ห้วยยายจิ๋ว",15.418554,101.536578],["1612_001","OLT 3BB เทพสถิต HF1612-01","TRS Customer","FTTX","หมู่บ้านบ้านวะตะแบก","วะตะแบก","เทพสถิต","เทพสถิต",15.3864,101.442151],["1611_187_D","DSLAM 3BB สี่แยกบ้านหัน(ตลาดทราย ม.3) HV1611-187","TRS Customer","DSLAM","หมู่บ้านสี่แยกบ้านหัน(ตลาดทราย ม.3)","บ้านหัน","เกษตรสมบูรณ์","สี่แยกบ้านหัน(ตลาดทราย ม.3)",16.303766,102.018596],["1611_076","OLT 3BB โนนทองเมืองใหม่ HF1611-76","TRS Customer","FTTX","หมู่บ้านบ้านโนนทอง","กุดเลาะ","เกษตรสมบูรณ์","โนนทองเมืองใหม่",16.30533,101.90695],["1611_074","OLT 3BB บ้านสารจอดเหนือ HF1611-74","TRS Customer","FTTX","หมู่บ้านบ้านสารจอดใหม่","หนองโพนงาม","เกษตรสมบูรณ์","บ้านสารจอดเหนือ",16.435577,101.93649],["1611_071","OLT 3BB ห้วยยางดำ HF1611-71","TRS Customer","FTTX","หมู่บ้านบ้านห้วยยางดำ","หนองข่า","เกษตรสมบูรณ์","ห้วยยางดำ",16.10983,101.837565],["1611_061","OLT 3BB บ้านตลาดทราย HF1611-61","TRS Customer","FTTX","หมู่บ้านบ้านตลาดทราย","บ้านหัน","เกษตรสมบูรณ์","บ้านตลาดทราย",16.31389,102.006381],["1611_056","OLT 3BB อบต.บ้านบัว HF1611-56","TRS Customer","FTTX","หมู่บ้านบ้านบัว","บ้านบัว","เกษตรสมบูรณ์","อบต.บ้านบัว",16.246634,101.930933],["1611_047","OLT 3BB บ้านเป้า HF1611-47","TRS Customer","FTTX","หมู่บ้านบ้านโพธิ์ทอง หมู่ 12","บ้านเป้า","เกษตรสมบูรณ์","บ้านเป้า",16.381228,101.974255],["1611_045","OLT 3BB บ้านเดื่อเกษตรสมบูรณ์ HF1611-45","TRS Customer","FTTX","หมู่บ้านบ้านเดื่อ","บ้านเดื่อ","เกษตรสมบูรณ์","บ้านเดื่อเกษตรสมบูรณ์",16.124368,101.898552],["1611_042","OLT 3BB เกษตรสมบูรณ์ HF1611-42","TRS Customer","FTTX","หมู่บ้านบ้านกำแพง","บ้านยาง","เกษตรสมบูรณ์","เกษตรสมบูรณ์",16.282622,101.940908],["1610_126","OLT 3BB บ้านหนองพวง HF1610-126","TRS Customer","FTTX","หมู่บ้านหนองพวง","วังชมภู","หนองบัวแดง","บ้านหนองพวง",16.13781,101.575605],["1610_073","OLT 3BB บ้านโนนศรีสง่า HF1610-73","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 8  บ้านโนนศรีสง่า","นางแดด","หนองบัวแดง","บ้านโนนศรีสง่า",16.219815,101.52251],["1610_068","OLT 3BB บ้านโนนเหม่า HF1610-68","TRS Customer","FTTX","หมู่บ้านโนนเหม่า","นางแดด","หนองบัวแดง","บ้านโนนเหม่า",16.193361,101.595472],["1610_060","OLT 3BB บ้านหัวนาคำ HF1610-60","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 7  บ้านหัวนาคำ","ถ้ำวัวแดง","หนองบัวแดง","บ้านหัวนาคำ",16.070974,101.519556],["1610_033","OLT 3BB สามแยกเดโช HF1610-33","TRS Customer","FTTX","สามแยกเดโช","หนองบัวแดง","หนองบัวแดง","สามแยกเดโช",16.071482,101.789261],["1610_032","OLT 3BB หนองแวงบัวแดง HF1610-32","TRS Customer","FTTX","หนองแวงบัวแดง","หนองแวง","หนองบัวแดง","หนองแวงบัวแดง",16.097222,101.710103],["1610_029","OLT 3BB หนองเป็ด HF1610-29","TRS Customer","FTTX","หมู่บ้านบ้านโนนสำราญ","ท่าใหญ่","หนองบัวแดง","หนองเป็ด",16.014409,101.646308],["1610_028","OLT 3BB โรงเรียนบ้านหนองปล้อง HF1610-28","TRS Customer","FTTX","บ้านหนองปล้อง","หนองแวง","หนองบัวแดง","โรงเรียนบ้านหนองปล้อง",16.117619,101.732748],["1610_004_D","DSLAM 3BB เทศบาลตำบลหนองบัวแดง HC1610-04","TRS Customer","DSLAM","หน้าเทศบาลตำบลหนองบัวแดง","หนองบัวแดง","หนองบัวแดง","เทศบาลตำบลหนองบัวแดง",16.078744,101.800171],["1610_004","OLT 3BB เทศบาลตำบลหนองบัวแดง HF1610-04","TRS Customer","FTTX","เทศบาลตำบลหนองบัวแดง","หนองบัวแดง","หนองบัวแดง","เทศบาลตำบลหนองบัวแดง",16.078744,101.800171],["1610_003","OLT 3BB ธกส. หนองบัวแดง HF1610-03","TRS Customer","FTTX","ธกส. หนองบัวแดง","หนองบัวแดง","หนองบัวแดง","ธกส. หนองบัวแดง",16.07838,101.807929],["1609_082","OLT 3BB พระธาตุแก้งคอย HF1609-82","TRS Customer","FTTX","พระธาตุแก้งคอย","โนนคูณ","คอนสาร","พระธาตุแก้งคอย",16.505264,102.033484],["1609_053","OLT 3BB บ้านหนองเชียงรอด HF1609-53","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 5  บ้านหนองเชียงรอด","ทุ่งลุยลาย","คอนสาร","บ้านหนองเชียงรอด",16.503066,101.821251],["1609_002","OLT 3BB วัดเจดีย์คอนสาร HF1609-02","TRS Customer","FTTX","หมู่บ้านบ้านนาเขิน","คอนสาร","คอนสาร","วัดเจดีย์คอนสาร",16.615619,101.926916],["1609_001_D","DSLAM 3BB คอนสาร HC1609-01","TRS Customer","DSLAM","บ้านน้ำพุปางวัว","คอนสาร","คอนสาร","คอนสาร",16.5944,101.928175],["1609_001","OLT 3BB คอนสาร HF1609-01","TRS Customer","FTTX","หมู่บ้านบ้านน้ำพุปางวัว","คอนสาร","คอนสาร","คอนสาร",16.5944,101.928175],["1608_056","OLT 3BB บ้านหนองโดน HF1608-56","TRS Customer","FTTX","บ้านหนองโดน","สามสวน","บ้านแท่น","บ้านหนองโดน",16.379171,102.291036],["1608_018","OLT 3BB บ้านสระพัง HF1608-18","TRS Customer","FTTX","หมู่บ้านสระพัง","สระพัง","บ้านแท่น","บ้านสระพัง",16.397485,102.397845],["1608_003","OLT 3BB บ้านเต่าแสนสำราญ HF1608-03","TRS Customer","FTTX","หมู่บ้านบ้านเต่า","บ้านเต่า","บ้านแท่น","บ้านเต่าแสนสำราญ",16.353874,102.377476],["1608_001","OLT 3BB บ้านแท่น HF1608-01","TRS Customer","FTTX","หมู่บ้านบ้านแท่น","บ้านแท่น","บ้านแท่น","บ้านแท่น",16.407952,102.348202],["1607_116","OLT 3BB บ้านหว้าเฒ่า HF1607-116","TRS Customer","FTTX","หมู่บ้านบ้านหว้าเฒ่า","ภูแลนคา","บ้านเขว้า","บ้านหว้าเฒ่า",15.897714,101.805834],["1607_093","OLT 3BB บ้านเขว้า HF1607-93","TRS Customer","FTTX","บ้านเขว้า","บ้านเขว้า","บ้านเขว้า","บ้านเขว้า",15.776781,101.909159],["1607_056","OLT 3BB กุดฉนวน HF1607-56","TRS Customer","FTTX","หมู่บ้านบ้านกุดฉนวน","บ้านเขว้า","บ้านเขว้า","กุดฉนวน",15.727469,101.929124],["1607_049","OLT 3BB หลุบโพธิ์ HF1607-49","TRS Customer","FTTX","หลุบโพธิ์","ตลาดแร้ง","บ้านเขว้า","หลุบโพธิ์",15.794855,101.869357],["1607_041","OLT 3BB ตลาดแลงบ้านเขว้า HF1607-41","TRS Customer","FTTX","ตลาดแลงบ้านเขว้า","บ้านเขว้า","บ้านเขว้า","ตลาดแลงบ้านเขว้า",15.764578,101.910663],["1606_119_D","DSLAM 3BB บ้านโปร่งคลอง HV1606-119","TRS Customer","DSLAM","หมู่บ้านโปร่งคลอง","บ้านโสก","คอนสวรรค์","บ้านโปร่งคลอง",15.912753,102.246986],["1606_092","OLT 3BB คอนสวรรค์ HF1606-92","TRS Customer","FTTX","คอนสวรรค์","โคกมั่งงอย","คอนสวรรค์","คอนสวรรค์",15.932683,102.281455],["1606_070","OLT 3BB บ้านช่องสามหมอ HF1606-70","TRS Customer","FTTX","หมู่บ้านบ้านชนแดน","ช่องสามหมอ","คอนสวรรค์","บ้านช่องสามหมอ",16.067009,102.278686],["1606_067","OLT 3BB บ้านสำราญ HF1606-67","TRS Customer","FTTX","หมู่บ้านบ้านสำราญ","ศรีสำราญ","คอนสวรรค์","บ้านสำราญ",16.013862,102.348731],["1606_049","OLT 3BB บ้านหนองตะไกร้ HF1606-49","TRS Customer","FTTX","หมู่บ้านบ้านหนองตาไก้","หนองขาม","คอนสวรรค์","บ้านหนองตะไกร้",15.868312,102.231123],["1606_048","OLT 3BB บ้านยางหวาย HF1606-48","TRS Customer","FTTX","บ้านยางหวาย","ยางหวาย","คอนสวรรค์","บ้านยางหวาย",15.872934,102.286977],["1606_041","OLT 3BB บ้านจอก(คอนสวรรค์ 1) HF1606-41","TRS Customer","FTTX","หมู่บ้านบริเวณชุมชนบ้านจอก","คอนสวรรค์","คอนสวรรค์","บ้านจอก(คอนสวรรค์ 1)",15.926478,102.283993],["1605_122_D","DSLAM 3BB บ้านปากจาบ HV1605-122","TRS Customer","DSLAM","หมู่บ้านบ้านปากจาบ","โคกเพชรพัฒนา","บำเหน็จณรงค์","บ้านปากจาบ",15.428812,101.610787],["1605_113","OLT 3BB บ้านโคกเพชรบำเหน็จณรงค์ HF1605-113","TRS Customer","FTTX","หมู่บ้านบ้านโคกเพชร","โคกเพชรพัฒนา","บำเหน็จณรงค์","บ้านโคกเพชรบำเหน็จณรงค์",15.483859,101.566513],["1605_056","OLT 3BB บ้านโคกหินตั้ง HF1605-56","TRS Customer","FTTX","บ้านโคกหินตั้ง","บ้านเพชร","บำเหน็จณรงค์","บ้านโคกหินตั้ง",15.402737,101.618681],["1605_055","OLT 3BB โคกสว่าง HF1605-55","TRS Customer","FTTX","หมู่บ้านบ้านโคกสว่างวัฒนา","บ้านเพชร","บำเหน็จณรงค์","โคกสว่าง",15.463519,101.712744],["1605_045","OLT 3BB หัวทะเลชัยภูมิ HF1605-45","TRS Customer","FTTX","หัวทะเลชัยภูมิ","หัวทะเล","บำเหน็จณรงค์","หัวทะเลชัยภูมิ",15.465927,101.754928],["1605_041","OLT 3BB บ้านเพชรบำเหน็จณรงค์ HF1605-41","TRS Customer","FTTX","บ้านเพชรบำเหน็จณรงค์","บ้านเพชร","บำเหน็จณรงค์","บ้านเพชรบำเหน็จณรงค์",15.455685,101.685584],["1605_032","OLT 3BB บ้านชวน HF1605-32","TRS Customer","FTTX","บ้านชวน","บ้านชวน","บำเหน็จณรงค์","บ้านชวน",15.502065,101.686961],["1605_031","OLT 3BB บ้านคำปิง HF1605-31","TRS Customer","FTTX","บ้านคำปิง","บ้านเพชร","บำเหน็จณรงค์","บ้านคำปิง",15.440611,101.689063],["1604_157_D","DSLAM 3BB วัดศิริพงษาวาส HC1604-157","TRS Customer","DSLAM","หมู่บ้านบ้านกอก","บ้านกอก","จัตุรัส","วัดศิริพงษาวาส",15.562263,101.849987],["1604_123_D","DSLAM 3BB บ้านท่าแตง HV1604-123","TRS Customer","DSLAM","หมู่บ้านท่าแตง","กุดน้ำใส","จัตุรัส","บ้านท่าแตง",15.645754,101.745741],["1604_113","OLT 3BB บ้านนาจัตุรัส HF1604-113","TRS Customer","FTTX","หมู่บ้านนา","บ้านขาม","จัตุรัส","บ้านนาจัตุรัส",15.496425,101.769003],["1604_093","OLT 3BB จัตุรัส HF1604-93","TRS Customer","FTTX","จัตุรัสชัยภูมิ","บ้านกอก","จัตุรัส","จัตุรัส",15.562263,101.849987],["1604_069","OLT 3BB หนองบัวโคก HF1604-69","TRS Customer","FTTX","256 หมู่บ้านบ้านหนองบัวโคก","บ้านขาม","จัตุรัส","หนองบัวโคก",15.414762,101.832381],["1604_062","OLT 3BB บ้านโนนจานชัยภูมิ HF1604-62","TRS Customer","FTTX","บ้านโนนจาน","ละหาน","จัตุรัส","บ้านโนนจานชัยภูมิ",15.647629,101.937674],["1604_055","OLT 3BB บ้านวังเสมา HF1604-55","TRS Customer","FTTX","บ้านวังเสมา","กุดน้ำใส","จัตุรัส","บ้านวังเสมา",15.565222,101.828186],["1604_052_D","DSLAM 3BB สหกรณ์การเกษตรจัตุรัส HC1604-52","TRS Customer","DSLAM","สหกรณ์การเกษตรจัตุรัส","บ้านกอก","จัตุรัส","สหกรณ์การเกษตรจัตุรัส",15.568173,101.85228],["1604_046","OLT 3BB บ้านละหาน HF1604-46","TRS Customer","FTTX","บ้านละหาน","ละหาน","จัตุรัส","บ้านละหาน",15.592846,101.9006],["1604_043","OLT 3BB บ้านหนองบัวบาน HF1604-43","TRS Customer","FTTX","หมู่บ้านบ้านหนองบัวบาน","หนองบัวบาน","จัตุรัส","บ้านหนองบัวบาน",15.683197,101.867566],["1603_167","OLT 3BB บ้านห้วยโปร่งช้าง HF1603-167","TRS Customer","FTTX","หมู่บ้านหมู่ที่ 5  บ้านห้วยโปร่งช้าง","เก่าย่าดี","แก้งคร้อ","บ้านห้วยโปร่งช้าง",16.092908,102.086176],["1603_092","OLT 3BB แก้งคร้อ HF1603-92","TRS Customer","FTTX","แก้งคร้อ","หนองไผ่","แก้งคร้อ","แก้งคร้อ",16.113381,102.254805],["1603_089","OLT 3BB บ้านหนองแวงน้อย HF1603-89","TRS Customer","FTTX","บ้านหนองแวงน้อย","โคกกุง","แก้งคร้อ","บ้านหนองแวงน้อย",16.11045,102.161026],["1603_061","OLT 3BB บ้านแก้งเจริญนาส้มกบ HF1603-61","TRS Customer","FTTX","หมู่บ้านบ้านแก้งพัฒนา","บ้านแก้ง","แก้งคร้อ","บ้านแก้งเจริญนาส้มกบ",16.195299,102.327077],["1603_059","OLT 3BB บ้านนาหนองทุ่ม1 HF1603-59","TRS Customer","FTTX","หมู่บ้านบ้านนาหนองทุ่ม","นาหนองทุ่ม","แก้งคร้อ","บ้านนาหนองทุ่ม1",16.04946,102.188525],["1603_053","OLT 3BB หนองสังข์ HF1603-53","TRS Customer","FTTX","หมู่บ้านบ้านโนนทัน","หนองสังข์","แก้งคร้อ","หนองสังข์",16.26005,102.356127],["1603_052","OLT 3BB บ้านหนองแก HF1603-52","TRS Customer","FTTX","หมู่บ้านบ้านหนองแก","หนองไผ่","แก้งคร้อ","บ้านหนองแก",16.164525,102.248405],["1603_044","OLT 3BB คลองไผ่งาม HF1603-44","TRS Customer","FTTX","คลองไผ่งาม","หนองไผ่","แก้งคร้อ","คลองไผ่งาม",16.116392,102.258315],["1603_043_D","DSLAM 3BB โนนสวรรค์ H1603-43","TRS Customer","DSLAM","หมู่บ้านบริเวณบ้านโนนสวรรค์","หนองไผ่","แก้งคร้อ","โนนสวรรค์",16.110034,102.260964],["1602_207_D","DSLAM 3BB WiFi@Room_M Palace HV1602-207","TRS Customer","DSLAM","WiFi@Room_M Palace","โคกสะอาด","ภูเขียว","WiFi@Room_M Palace",16.492717,102.124221],["1602_168","OLT 3BB บ้านประชาสามัคคี HF1602-168","TRS Customer","FTTX","หมู่บ้านประชาสามัคคี","หนองตูม","ภูเขียว","บ้านประชาสามัคคี",16.336387,102.074682],["1602_162_D","DSLAM 3BB บ้านโนนสาวเอ้ HV1602-162","TRS Customer","DSLAM","หมู่บ้านโนนสาวเอ้","โคกสะอาด","ภูเขียว","บ้านโนนสาวเอ้",16.467356,102.131515],["1602_131","OLT 3BB หมู่ที่ 10 บ้านหนองสองห้อง HF1602-131","TRS Customer","FTTX","หมู่บ้านบ้านหนองสองห้อง","ผักปัง","ภูเขียว","หมู่ที่ 10 บ้านหนองสองห้อง",16.424541,102.129928],["1602_106","OLT 3BB บ้านมูลกระบือ HF1602-106","TRS Customer","FTTX","หมู่บ้านบ้านมูลกระบือ","หนองคอนไทย","ภูเขียว","บ้านมูลกระบือ",16.467645,102.218881],["1602_095","OLT 3BB ภูเขียว HF1602-95","TRS Customer","FTTX","ภูเขียว","ผักปัง","ภูเขียว","ภูเขียว",16.363269,102.135095],["1602_083","OLT 3BB บ้านโคกสะอาด-ร่องแสนคำ HF1602-83","TRS Customer","FTTX","หมู่บ้านบ้านโคกสะอาด","บ้านแก้ง","ภูเขียว","บ้านโคกสะอาด-ร่องแสนคำ",16.411371,101.993566],["1602_073","OLT 3BB สถานีอนามัยกุดจอก HF1602-73","TRS Customer","FTTX","สถานีอนามัยกุดจอก","โคกสะอาด","ภูเขียว","สถานีอนามัยกุดจอก",16.477239,102.080862],["1602_069","OLT 3BB เรือกุดยม HF1602-69","TRS Customer","FTTX","หมู่บ้านบ้านเรือ","กุดยม","ภูเขียว","เรือกุดยม",16.394198,102.188437],["1602_064","OLT 3BB หนองบัวพักเกวียน HF1602-64","TRS Customer","FTTX","หมู่บ้านบ้านบัวพักเกวียน","กวางโจน","ภูเขียว","หนองบัวพักเกวียน",16.295214,102.214413],["1602_063","OLT 3BB บ้านเพรชภูเขียว HF1602-63","TRS Customer","FTTX","หมู่บ้านบ้านเพชร","บ้านเพชร","ภูเขียว","บ้านเพรชภูเขียว",16.328782,102.273773],["1602_056","OLT 3BB บ้านหนองคัน HF1602-56","TRS Customer","FTTX","หมู่บ้านบ้านหนองบัวคำ","ธาตุทอง","ภูเขียว","บ้านหนองคัน",16.22321,102.193836],["1602_051","OLT 3BB โรงงานน้ำตาลภูเขียว HF1602-51","TRS Customer","FTTX","โรงงานน้ำตาลภูเขียว Node1","โคกสะอาด","ภูเขียว","โรงงานน้ำตาลภูเขียว",16.482745,102.124976],["1602_045_D","DSLAM 3BB ชูชัยเทเลคอม H1602-45","TRS Customer","DSLAM","หมู่บ้านบ้านผักปัง ถนนราษฎร์สำราญ","ผักปัง","ภูเขียว","ชูชัยเทเลคอม",16.365343,102.135293],["1602_044_D","DSLAM 3BB โรงพยาบาลภูเขียว H1602-44","TRS Customer","DSLAM","หมู่บ้านบริเวณโรงพยาบาลภูเขียว ถนนภูเขียว-ชัยภูมิ","ผักปัง","ภูเขียว","โรงพยาบาลภูเขียว",16.374487,102.129133],["1602_043_D","DSLAM 3BB โนนงามภูเขียว H1602-43","TRS Customer","DSLAM","หมู่บ้านโนนงามภูเขียว","ผักปัง","ภูเขียว","โนนงามภูเขียว",16.367234,102.129294],["1602_043","OLT 3BB โนนงามภูเขียว HF1602-43","TRS Customer","FTTX","โนนงามภูเขียว","ผักปัง","ภูเขียว","โนนงามภูเขียว",16.367234,102.129294],["1601_396","OLT 3BB กุดตุ้ม HF1601-396","TRS Customer","FTTX","กุดตุ้ม","กุดตุ้ม","เมืองชัยภูมิ","กุดตุ้ม",15.810732,102.147115],["1601_292","OLT 3BB ช่อระกา HF1601-292","TRS Customer","FTTX","ช่อระกา","บ้านเล่า","เมืองชัยภูมิ","ช่อระกา",15.861299,102.019586],["1601_291","OLT 3BB บ้านขี้เหล็กใหญ่ HF1601-291","TRS Customer","FTTX","บ้านขี้เหล็กใหญ่","รอบเมือง","เมืองชัยภูมิ","บ้านขี้เหล็กใหญ่",15.79194,102.01197],["1601_241_D","DSLAM 3BB บ้านสามพันตา HC1601-241","TRS Customer","DSLAM","หมู่บ้านบ้านสามพันตา","ห้วยต้อน","เมืองชัยภูมิ","บ้านสามพันตา",15.951154,101.827169],["1601_222","OLT 3BB บ้านท่าหินโงม HF1601-222","TRS Customer","FTTX","บ้านท่าหินโงม","ท่าหินโงม","เมืองชัยภูมิ","บ้านท่าหินโงม",16.06352,102.038511],["1601_144","OLT 3BB ห้วยต้อน HF1601-144","TRS Customer","FTTX","หมู่บ้านบ้านห้วยต้อน","ห้วยต้อน","เมืองชัยภูมิ","ห้วยต้อน",15.891611,101.937349],["1601_135","OLT 3BB หนองไผ่กุดละลม HF1601-135","TRS Customer","FTTX","หนองไผ่กุดละลม","หนองไผ่","เมืองชัยภูมิ","หนองไผ่กุดละลม",15.710433,102.066558],["1601_121_D","DSLAM 3BB WiFi@Room_M2 Residents HC1601-121","TRS Customer","DSLAM","644/19 ถ.สนามบิน","ในเมือง","เมืองชัยภูมิ","WiFi@Room_M2 Residents",15.811236,102.025414],["1601_118_D","DSLAM 3BB หน้าบิ๊กซีชัยภูมิ HC1601-118","TRS Customer","DSLAM","หน้าบิ๊กซีชัยภูมิ","บุ่งคล้า","เมืองชัยภูมิ","หน้าบิ๊กซีชัยภูมิ",15.775971,102.025416],["1601_103","OLT 3BB สัมพันธ์-หัวนา HF1601-103","TRS Customer","FTTX","หมู่บ้านบ้านสัมพันธ์","บุ่งคล้า","เมืองชัยภูมิ","สัมพันธ์-หัวนา",15.758663,102.050183],["1601_083","OLT 3BB สหกรณ์ตรวจบัญชีชัยภูมิ HF1601-83","TRS Customer","FTTX","สหกรณ์ตรวจบัญชีชัยภูมิ","ในเมือง","เมืองชัยภูมิ","สหกรณ์ตรวจบัญชีชัยภูมิ",15.816591,102.029093],["1601_082","OLT 3BB สี่แยกล้อเกวียน HF1601-82","TRS Customer","FTTX","สี่แยกล้อเกวียน","ในเมือง","เมืองชัยภูมิ","สี่แยกล้อเกวียน",15.797541,102.017561],["1601_079","OLT 3BB บ้านค่ายชัยภูมิ HF1601-79","TRS Customer","FTTX","บ้านค่ายชัยภูมิ","บ้านค่าย","เมืองชัยภูมิ","บ้านค่ายชัยภูมิ",15.686712,102.009918],["1601_077","OLT 3BB วิทยาลัยเทคนิคชัยภูมิ HF1601-77","TRS Customer","FTTX","วิทยาลัยเทคนิคชัยภูมิ","ในเมือง","เมืองชัยภูมิ","วิทยาลัยเทคนิคชัยภูมิ",15.817229,102.013139],["1601_071","OLT 3BB สี่แยกกองช่าง HF1601-71","TRS Customer","FTTX","ถนนบรรณาการ","ในเมือง","เมืองชัยภูมิ","สี่แยกกองช่าง",15.807195,102.024557],["1601_066","OLT 3BB ราชภัฎชัยภูมิ HF1601-66","TRS Customer","FTTX","ราชภัฎชัยภูมิ","นาฝาย","เมืองชัยภูมิ","ราชภัฎชัยภูมิ",15.932879,102.023513],["1601_065","OLT 3BB บ้านช่อระกาโหนด2 HF1601-65","TRS Customer","FTTX","หมูู่บ้านช่อระกา","นาฝาย","เมืองชัยภูมิ","บ้านช่อระกาโหนด2",15.87041,102.017261],["1601_061","OLT 3BB ท่าหว้าบ้านค่าย HF1601-61","TRS Customer","FTTX","8/11 ถนนหน้าวัดพรหมมาวาสวิหาร","ในเมือง","เมืองชัยภูมิ","ท่าหว้าบ้านค่าย",15.669316,102.035921],["1601_059","OLT 3BB โนนสำราญ HF1601-59","TRS Customer","FTTX","หมู่บ้านบริเวณโนนสำราญ","โนนสำราญ","เมืองชัยภูมิ","โนนสำราญ",15.671298,102.064543],["1601_058","OLT 3BB บ้านโพนทองชัยภูมิ HF1601-58","TRS Customer","FTTX","หมู่บ้านบริเวณบ้านโพนทอง","โพนทอง","เมืองชัยภูมิ","บ้านโพนทองชัยภูมิ",15.823717,102.068795],["1601_057","OLT 3BB โฮมการ์เด้นวิลล์ HF1601-57","TRS Customer","FTTX","หมู่บ้านบริเวณโฮมการ์เด้นวิลล์ ถนนชัยภูมิ-นครสวรรค์","ในเมือง","เมืองชัยภูมิ","โฮมการ์เด้นวิลล์",15.792745,102.000259],["1601_056","OLT 3BB อรวรรณคันทรี 2 HF1601-56","TRS Customer","FTTX","หมู่บ้านบริเวณอรวรรณคันทรี ถนนรอบเมือง","ในเมือง","เมืองชัยภูมิ","อรวรรณคันทรี 2",15.838745,102.060045],["1601_055","OLT 3BB หนองบัวเมืองเก่า HF1601-55","TRS Customer","FTTX","หมู่บ้านบริเวณเมืองเก่าชัยภูมิ","ในเมือง","เมืองชัยภูมิ","หนองบัวเมืองเก่า",15.805961,102.039615],["1601_054","OLT 3BB สามแยกนิเวศน์รัตน์ HF1601-54","TRS Customer","FTTX","สามแยกนิเวศน์รัตน์","ในเมือง","เมืองชัยภูมิ","สามแยกนิเวศน์รัตน์",15.822319,102.048951],["1601_053","OLT 3BB เอื้ออาทร HF1601-53","TRS Customer","FTTX","หมู่บ้านบริเวณเอื้ออาทร","ในเมือง","เมืองชัยภูมิ","เอื้ออาทร",15.822187,102.028476],["1601_052","OLT 3BB บ้านเล่า HF1601-52","TRS Customer","FTTX","บ้านเล่า","บ้านเล่า","เมืองชัยภูมิ","บ้านเล่า",15.853924,102.066215],["1601_049_D","DSLAM 3BB โรงแรมศิริชัย H1601-49","TRS Customer","DSLAM","หมู่บ้านโรงแรมศิริชัย ถนนโนนม่วง","ในเมือง","เมืองชัยภูมิ","โรงแรมศิริชัย",15.810302,102.028836],["1601_043_D","DSLAM 3BB ทรงศิลา H1601-43","TRS Customer","DSLAM","หมู่บ้านวัดทรงศิลา ถนนยุติธรรม","ในเมือง","เมืองชัยภูมิ","ทรงศิลา",15.810549,102.033813],["1601_043","OLT 3BB ทรงศิลา HF1601-43","TRS Customer","FTTX","หมู่บ้านวัดทรงศิลา ถนนยุติธรรม","ในเมือง","เมืองชัยภูมิ","ทรงศิลา",15.810549,102.033813],["1601_040_D","DSLAM 3BB ชุมสายห้าแยกโนนไฮ HC1601-40","TRS Customer","DSLAM","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541],["1601_037_D","DSLAM 3BB โลตัสชัยภูมิ HC1601-37","TRS Customer","DSLAM","หมู่บ้านหน้าโรงเรยนชัยภูมิโพลีเทคนิค ถนนสนามบิน","ในเมือง","เมืองชัยภูมิ","โลตัสชัยภูมิ",15.812595,102.025104],["1601_032","OLT 3BB บ้านหนองนาแซง HF1601-32","TRS Customer","FTTX","หมู่บ้านทางแยกเข้าบ้านหนองนาแซง ถนนสีคิ้ว","หนองนาแซง","เมืองชัยภูมิ","บ้านหนองนาแซง",15.765361,102.024205],["1601_031","OLT 3BB ชุมสายห้าแยกโนนไฮ HF1601-31","TRS Customer","FTTX","8/11 หมู่ 7","ในเมือง","เมืองชัยภูมิ","ชุมสายห้าแยกโนนไฮ",15.801917,102.028541]];
+const COLORS={'FTTX':'#e5484d','Metronet':'#12a150','DSLAM':'#f59e0b','WDM':'#8b5cf6','Main Metronet':'#0891b2','E1-Corporate':'#475569'};
+const colorOf=t=>COLORS[t]||'#64748b';
+const ITEMS=DATA.map(r=>({code:r[0],name:r[1],type:r[2],t1:r[3],addr:r[4],tum:r[5],amp:r[6],short:r[7],lat:r[8],lng:r[9]}));
+ITEMS.forEach(o=>{o.hay=[o.code,o.name,o.short,o.tum,o.amp,o.t1].join(' ').toLowerCase()});
+const byCode=new Map(ITEMS.map(o=>[o.code,o]));
+const sameAt=new Map();
+ITEMS.forEach(o=>{const k=o.lat+','+o.lng;(sameAt.get(k)||sameAt.set(k,[]).get(k)).push(o)});
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const navUrl=o=>'https://www.google.com/maps/dir/?api=1&destination='+o.lat+','+o.lng;
+const isPhone=()=>matchMedia('(max-width:800px)').matches;
+
+const map=L.map('map',{zoomControl:true,preferCanvas:false});
+const esri=p=>L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/'+p+'/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+const base={'แผนที่ถนน':esri('World_Street_Map'),'ภาพถ่ายดาวเทียม':esri('World_Imagery'),'แผนที่ภูมิประเทศ':esri('World_Topo_Map')};
+base['แผนที่ถนน'].addTo(map);
+L.control.layers(base,null,{position:'bottomright',collapsed:true}).addTo(map);
+const layer=L.layerGroup().addTo(map);
+const allBounds=L.latLngBounds(ITEMS.map(o=>[o.lat,o.lng]));
+map.fitBounds(allBounds,{padding:[30,30]});
+new ResizeObserver(()=>map.invalidateSize()).observe($('map'));
+
+const SHARE_BASE=/*SB*/''/*SB*/;
+const INIT_S=/*IS*/''/*IS*/;
+const IDX=new Map(ITEMS.map((o,i)=>[o.code,i]));
+const enc=codes=>codes.map(c=>IDX.get(c).toString(36)).join(',');
+const dec=s=>String(s||'').split(',').map(x=>x.trim()).filter(Boolean).map(x=>byCode.has(x)?x:(ITEMS[parseInt(x,36)]||{}).code).filter(Boolean);
+let me=null,watchId=null,meDot=null,meAcc=null,lastR=null;
+const meLayer=L.layerGroup().addTo(map);
+function hav(a,b,c,d){const r=Math.PI/180,R=6371000,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function fmt(m){return m<1000?Math.max(10,Math.round(m/10)*10)+' ม.':(m/1000).toFixed(m<10000?1:0)+' กม.'}
+function dOf(o){return me?hav(me.lat,me.lng,o.lat,o.lng):0}
+function nearest(n){
+  if(!me)return[];
+  const pool=sel.size?[...sel].map(c=>byCode.get(c)):ITEMS;
+  return pool.map(o=>[dOf(o),o]).sort((a,b)=>a[0]-b[0]).slice(0,n);
+}
+const sel=new Set();
+const markers=new Map();
+const KEY='map3bb.sel.v1';
+
+function popupHtml(o){
+  const others=(sameAt.get(o.lat+','+o.lng)||[]).filter(x=>x!==o);
+  const same=others.length?'<div class="pp-same">อีก '+others.length+' code ที่พิกัดเดียวกัน'+others.slice(0,8).map(x=>'<div>'+esc(x.code)+'</div>').join('')+(others.length>8?'<div>และอีก '+(others.length-8)+' code</div>':'')+'</div>':'';
+  return '<div class="pp"><div class="pp-code">'+esc(o.code)+'</div><div class="pp-name">'+esc(o.short||o.name)+'</div><dl>'
+   +'<dt>ประเภท</dt><dd>'+esc(o.type)+' · '+esc(o.t1)+'</dd>'
+   +'<dt>ที่อยู่</dt><dd>'+esc(o.addr)+'</dd>'
+   +'<dt>ที่ตั้ง</dt><dd>ต.'+esc(o.tum)+' อ.'+esc(o.amp)+'</dd>'
+   +'<dt>พิกัด</dt><dd>'+o.lat+', '+o.lng+'</dd>'+(me?'<dt>ห่างจากคุณ</dt><dd><b>'+fmt(hav(me.lat,me.lng,o.lat,o.lng))+'</b></dd>':'')+'</dl>'+same
+   +'<a class="pp-nav" target="_blank" rel="noopener" href="'+navUrl(o)+'">นำทางด้วย Google Maps</a></div>';
+}
+function makeMarker(o){
+  const m=L.circleMarker([o.lat,o.lng],{radius:10,color:'#fff',weight:2.5,fillColor:colorOf(o.t1),fillOpacity:1}).bindPopup(()=>popupHtml(o),{maxWidth:300,autoPanPadding:[20,90]});
+  if(!L.Browser.mobile)m.bindTooltip(esc(o.short||o.code),{direction:'top',offset:[0,-8]});
+  m.addTo(layer);markers.set(o.code,m);
+}
+function fitSel(){
+  const pts=[...sel].map(c=>byCode.get(c));
+  if(!pts.length){map.fitBounds(allBounds,{padding:[30,30]});return}
+  if(pts.length===1){map.setView([pts[0].lat,pts[0].lng],15);return}
+  map.fitBounds(L.latLngBounds(pts.map(o=>[o.lat,o.lng])),{padding:[60,60],maxZoom:16});
+}
+function add(code,fit=true){
+  const o=byCode.get(code);if(!o||sel.has(code))return;
+  sel.add(code);makeMarker(o);changed();if(fit)fitSel();
+}
+function remove(code){
+  if(!sel.has(code))return;
+  sel.delete(code);const m=markers.get(code);if(m){layer.removeLayer(m);markers.delete(code)}changed();
+}
+function changed(){render();persist();renderResults()}
+function persist(){
+  const codes=[...sel];
+  try{localStorage.setItem(KEY,JSON.stringify(codes))}catch(e){}
+  try{history.replaceState(null,'',codes.length?'#s='+enc(codes):location.pathname+location.search)}catch(e){}
+}
+
+function render(){
+  const keep=$('list').scrollTop;
+  $('cnt').textContent=sel.size;
+  $('hint').hidden=sel.size>0;
+  const counts={},total={};
+  ITEMS.forEach(o=>{total[o.t1]=(total[o.t1]||0)+1});
+  sel.forEach(c=>{const t=byCode.get(c).t1;counts[t]=(counts[t]||0)+1});
+  $('legend').innerHTML=Object.keys(total).sort((a,b)=>total[b]-total[a]).map(t=>'<span><i class="dot" style="background:'+colorOf(t)+'"></i>'+esc(t)+' <b>'+(counts[t]||0)+'/'+total[t]+'</b></span>').join('');
+  const near=nearest(3);
+  const nl=$('nearline');
+  if(near.length){nl.hidden=false;nl.innerHTML='ใกล้ที่สุด: <b>'+esc(near[0][1].short||near[0][1].code)+'</b> · '+fmt(near[0][0])}else nl.hidden=true;
+  const meta=o=>'<div class="meta"><div class="code">'+esc(o.code)+'</div><div class="nm">'+esc(o.short||o.name)+'</div><div class="sub">ต.'+esc(o.tum)+' · '+esc(o.t1)+(me?' · '+fmt(dOf(o)):'')+'</div></div>';
+  const navA=o=>'<a class="nav" target="_blank" rel="noopener" href="'+navUrl(o)+'">นำทาง</a>';
+  let html='';
+  if(near.length){
+    html+='<h3 class="grp"><span>ใกล้คุณที่สุด '+(sel.size?'(จากที่เลือก)':'(จากทุกสถานี)')+'</span><button class="lnk" data-stoploc>ปิดตำแหน่ง</button></h3>'
+     +near.map(([d,o])=>'<div class="item" data-code="'+esc(o.code)+'"><i class="dot" style="background:'+colorOf(o.t1)+'"></i>'+meta(o).replace(' · '+fmt(d),'')
+     +'<span class="dist">'+fmt(d)+'</span>'+(sel.has(o.code)?navA(o):'<button class="addb" data-add="'+esc(o.code)+'">+ เพิ่ม</button>')+'</div>').join('');
+  }
+  if(!sel.size){
+    html+='<div class="empty">ยังไม่มีหมุดที่เลือก<br>ค้นหาด้านบนแล้วกดเลือกรายการ</div>';
+  }else{
+    const groups={};
+    sel.forEach(c=>{const o=byCode.get(c);(groups[o.amp]||(groups[o.amp]=[])).push(o)});
+    let keys=Object.keys(groups);
+    if(me){keys.forEach(k=>groups[k].sort((x,y)=>dOf(x)-dOf(y)));keys.sort((a,b)=>dOf(groups[a][0])-dOf(groups[b][0]))}
+    else keys.sort((a,b)=>a.localeCompare(b,'th'));
+    html+=keys.map(a=>'<h3 class="grp"><span>อ.'+esc(a)+'</span><span>'+groups[a].length+'</span></h3>'+groups[a].map(o=>
+      '<div class="item" data-code="'+esc(o.code)+'"><i class="dot" style="background:'+colorOf(o.t1)+'"></i>'+meta(o)+navA(o)
+      +'<button class="rm" data-rm="'+esc(o.code)+'" aria-label="เอาหมุดออก">&times;</button></div>').join('')).join('');
+  }
+  $('list').innerHTML=html;
+  $('list').scrollTop=keep;
+}
+$('list').addEventListener('click',e=>{
+  const rm=e.target.closest('[data-rm]');
+  if(rm){remove(rm.dataset.rm);return}
+  const ad=e.target.closest('[data-add]');
+  if(ad){add(ad.dataset.add);return}
+  if(e.target.closest('[data-stoploc]')){stopLoc();return}
+  if(e.target.closest('.nav'))return;
+  const it=e.target.closest('.item');if(!it)return;
+  const o=byCode.get(it.dataset.code),m=markers.get(o.code);
+  if(!m){add(o.code);return}
+  if(isPhone())$('panel').classList.add('collapsed');
+  map.setView([o.lat,o.lng],Math.max(map.getZoom(),15));
+  setTimeout(()=>m&&m.openPopup(),isPhone()?260:0);
+});
+
+/* search */
+let found=[],active=-1;
+function search(q){
+  const toks=q.toLowerCase().split(/\s+/).filter(Boolean);
+  if(!toks.length)return[];
+  const out=[];
+  for(const o of ITEMS){
+    if(!toks.every(t=>o.hay.includes(t)))continue;
+    const t=toks[0];
+    const s=o.code.toLowerCase().startsWith(t)?0:(o.short.toLowerCase().startsWith(t)?1:2);
+    out.push([s,o]);
+  }
+  out.sort((a,b)=>a[0]-b[0]);
+  return out.map(x=>x[1]);
+}
+function renderResults(){
+  const q=$('q').value.trim();
+  $('qx').hidden=!$('q').value;
+  if(!q){$('results').hidden=true;found=[];return}
+  found=search(q);
+  const box=$('results');box.hidden=false;
+  if(!found.length){box.innerHTML='<div class="noresult">ไม่พบรายการที่ตรงกับ "'+esc(q)+'"</div>';return}
+  const shown=found.slice(0,40);
+  box.innerHTML='<div class="res-head">พบ '+found.length+' รายการ'+(found.length>40?' (แสดง 40 รายการแรก พิมพ์เพิ่มเพื่อกรอง)':'')+'</div>'
+   +shown.map((o,i)=>'<button class="result'+(sel.has(o.code)?' on':'')+(i===active?' act':'')+'" data-code="'+esc(o.code)+'"><i class="dot" style="background:'+colorOf(o.t1)+'"></i>'
+   +'<span><span class="code">'+esc(o.code)+'</span><br><span class="nm">'+esc(o.short||o.name)+'</span><br><span class="sub">ต.'+esc(o.tum)+' อ.'+esc(o.amp)+' · '+esc(o.t1)+'</span></span>'
+   +'<span class="pick">'+(sel.has(o.code)?'✓ เลือกแล้ว':'+ เพิ่ม')+'</span></button>').join('');
+}
+$('q').addEventListener('input',()=>{active=-1;renderResults()});
+$('q').addEventListener('focus',renderResults);
+$('q').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const o=found[Math.max(active,0)];if(o){sel.has(o.code)?remove(o.code):add(o.code)}e.preventDefault()}
+  else if(e.key==='ArrowDown'||e.key==='ArrowUp'){active=Math.max(0,Math.min(Math.min(found.length,40)-1,active+(e.key==='ArrowDown'?1:-1)));renderResults();const a=document.querySelector('.result.act');a&&a.scrollIntoView({block:'nearest'});e.preventDefault()}
+  else if(e.key==='Escape'){$('results').hidden=true}
+});
+$('qx').addEventListener('click',()=>{$('q').value='';active=-1;renderResults();$('q').focus()});
+$('results').addEventListener('click',e=>{
+  const b=e.target.closest('.result');if(!b)return;
+  const c=b.dataset.code;sel.has(c)?remove(c):add(c);
+});
+document.addEventListener('pointerdown',e=>{if(!e.target.closest('.searchwrap'))$('results').hidden=true});
+
+/* toolbar */
+$('fit').addEventListener('click',fitSel);
+$('all').addEventListener('click',()=>{ITEMS.forEach(o=>{if(!sel.has(o.code)){sel.add(o.code);makeMarker(o)}});changed();fitSel()});
+let armTimer;
+$('clear').addEventListener('click',()=>{
+  const b=$('clear');
+  if(!sel.size)return;
+  if(!b.classList.contains('armed')){b.classList.add('armed');b.textContent='กดอีกครั้ง';armTimer=setTimeout(disarm,3000);return}
+  disarm();layer.clearLayers();markers.clear();sel.clear();changed();map.fitBounds(allBounds,{padding:[30,30]});
+});
+function disarm(){clearTimeout(armTimer);$('clear').classList.remove('armed');$('clear').textContent='ล้าง'}
+function toast(t,ms){const e=$('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),ms||1800)}
+function shareLink(){
+  const q=sel.size?enc([...sel]):'';
+  return SHARE_BASE?SHARE_BASE+(q?'?s='+q:''):location.href.split('#')[0]+(q?'#s='+q:'');
+}
+$('share').addEventListener('click',()=>{
+  $('shareurl').value=shareLink();
+  $('sbinfo').textContent=sel.size?('คนที่เปิดลิงก์นี้จะเห็นหมุด '+sel.size+' รายการที่คุณเลือก'):'ยังไม่ได้เลือกหมุด ลิงก์นี้จะเปิดเป็นแผนที่ว่าง';
+  $('sbmsg').textContent='กดปุ่มคัดลอก หรือกดค้างที่ช่องลิงก์แล้วเลือกคัดลอก';
+  $('sharebox').hidden=false;
+  $('shareurl').focus();$('shareurl').select();
+});
+$('sbcopy').addEventListener('click',()=>{
+  const ta=$('shareurl'),url=ta.value;
+  const done=ok=>{$('sbmsg').textContent=ok?'คัดลอกลิงก์แล้ว นำไปวางส่งทาง LINE ได้เลย':'คัดลอกอัตโนมัติไม่ได้ กดค้างที่ช่องลิงก์แล้วเลือกคัดลอกเอง'};
+  const fb=()=>{ta.focus();ta.select();ta.setSelectionRange(0,url.length);let ok=false;try{ok=document.execCommand('copy')}catch(e){}done(ok)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(url).then(()=>done(true),fb);else fb();
+});
+$('sbclose').addEventListener('click',()=>{$('sharebox').hidden=true});
+$('sharebox').addEventListener('pointerdown',e=>{if(e.target.id==='sharebox')$('sharebox').hidden=true});
+$('grab').addEventListener('click',()=>$('panel').classList.toggle('collapsed'));
+$('tot').textContent=ITEMS.length;
+
+/* start: link first, then last session */
+/* my location */
+const locBtn=$('locate');
+function setLoc(s){locBtn.dataset.state=s;locBtn.setAttribute('aria-pressed',s==='on')}
+function setPeek(on){document.documentElement.style.setProperty('--sheet-peek',on?'120px':'92px')}
+function fitMe(){
+  const n=nearest(1);
+  if(sel.size&&n.length)map.fitBounds(L.latLngBounds([[me.lat,me.lng],[n[0][1].lat,n[0][1].lng]]),{padding:[70,70],maxZoom:16});
+  else map.setView([me.lat,me.lng],15);
+}
+function onFix(pos){
+  const c=pos.coords,first=!me;
+  me={lat:c.latitude,lng:c.longitude,acc:c.accuracy||0};
+  if(!meDot){
+    meAcc=L.circle([me.lat,me.lng],{radius:me.acc,color:'#2563eb',weight:1,fillColor:'#2563eb',fillOpacity:.12,interactive:false}).addTo(meLayer);
+    meDot=L.circleMarker([me.lat,me.lng],{radius:8,color:'#fff',weight:3,fillColor:'#2563eb',fillOpacity:1,interactive:false}).addTo(meLayer);
+  }else{meAcc.setLatLng([me.lat,me.lng]);meAcc.setRadius(me.acc);meDot.setLatLng([me.lat,me.lng])}
+  setLoc('on');setPeek(true);
+  if(first)fitMe();
+  if(first||!lastR||hav(lastR.lat,lastR.lng,me.lat,me.lng)>20){lastR={lat:me.lat,lng:me.lng};render()}
+}
+function stopLoc(){
+  if(watchId!==null&&navigator.geolocation)navigator.geolocation.clearWatch(watchId);
+  watchId=null;meLayer.clearLayers();meDot=meAcc=null;me=null;lastR=null;setLoc('off');setPeek(false);render();
+}
+function onLocErr(err){
+  const had=me;stopLoc();
+  const msg={1:'ไม่ได้รับอนุญาตให้ใช้ตำแหน่ง ตรวจสอบการอนุญาตตำแหน่งของเบราว์เซอร์ หรือเปิดลิงก์ใน Chrome / Safari',2:'หาตำแหน่งไม่ได้ ลองเปิด GPS แล้วกดใหม่',3:'หาตำแหน่งนานเกินไป ลองกดใหม่อีกครั้ง'}[err&&err.code]||'หาตำแหน่งไม่ได้';
+  toast(msg,5000);
+}
+locBtn.addEventListener('click',()=>{
+  if(!navigator.geolocation){toast('เบราว์เซอร์นี้ไม่รองรับการหาตำแหน่ง',4000);return}
+  if(watchId!==null){if(me)map.setView([me.lat,me.lng],Math.max(map.getZoom(),15));return}
+  setLoc('wait');
+  watchId=navigator.geolocation.watchPosition(onFix,onLocErr,{enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+});
+
+let booted=false;
+function boot(s){
+  if(booted)return;booted=true;
+  let codes=[];
+  const m=location.hash.match(/^#[sc]=(.*)$/);
+  if(s)codes=dec(s);
+  else if(m){try{codes=dec(decodeURIComponent(m[1]))}catch(e){}}
+  else{try{codes=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}}
+  codes.filter(c=>byCode.has(c)).forEach(c=>{sel.add(c);makeMarker(byCode.get(c))});
+  render();
+  if(sel.size){fitSel();persist()}
+}
+(function start(){
+  const g=window.google&&google.script&&google.script.url&&google.script.url.getLocation;
+  if(INIT_S||!g){boot(INIT_S);return}
+  /* Apps Script: the page sits in an iframe, so ask Google for the address-bar parameters */
+  setTimeout(()=>boot(''),2500);
+  try{google.script.url.getLocation(loc=>{
+    const p=loc&&loc.parameter&&loc.parameter.s;
+    const h=loc&&loc.hash?String(loc.hash).replace(/^[sc]=/,''):'';
+    boot((Array.isArray(p)?p[0]:p)||h||'');
+  })}catch(e){boot('')}
+})();
+</script>
+</body>
+</html>
